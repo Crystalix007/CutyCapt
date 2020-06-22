@@ -260,6 +260,7 @@ void CutyCapt::saveSnapshot() {
 	// uses the viewSize set by geometryChangeRequestedSlot
 
 	QString mOutput{ this->mOutput };
+	mTimeoutTimer.stop();
 
 	switch (mFormat) {
 		case SvgFormat: {
@@ -275,7 +276,6 @@ void CutyCapt::saveSnapshot() {
 		case PdfFormat:
 		case PsFormat: {
 			// TODO: change quality here?
-			mTimeoutTimer.stop();
 			mPage->page()->printToPdf(mOutput);
 			break;
 		}
