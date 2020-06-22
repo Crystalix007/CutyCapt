@@ -169,8 +169,12 @@ void CutyCapt::InitialLayoutCompleted() {
 		TryDelayedRender();
 }
 
-void CutyCapt::DocumentComplete(bool /*ok*/) {
-	if (!mSilent)
+void CutyCapt::DocumentComplete(bool ok) {
+	if (!mSilent && !ok) {
+		std::cerr << "WebEngine failed to completely load url" << std::endl;
+		QApplication::exit(1);
+		return;
+	} else if (!mSilent)
 		std::cerr << "WebEngine completely downloaded document" << std::endl;
 
 	mSawDocumentComplete = true;
@@ -203,26 +207,36 @@ void CutyCapt::TryDelayedRender() {
 	}
 
 	saveSnapshot();
-	QApplication::exit();
 }
 
 void CutyCapt::Timeout() {
+	if (!mSilent)
+		std::clog << "Timeout reached" << std::endl;
+
 	saveSnapshot();
-	QApplication::exit();
 }
 
 void CutyCapt::Delayed() {
 	saveSnapshot();
-	QApplication::exit();
 }
 
 void CutyCapt::onSizeChanged(const QSizeF& size) {
-	std::cerr << "Geometry of viewport change (" << size.width() << ", " << size.height() << ")"
+	if (!mSilent)
+		std::clog << "Geometry of viewport change (" << size.width() << ", " << size.height() << ")"
 	          << std::endl;
 
 	mViewSize = size.toSize();
 	mPage->setMinimumSize(mViewSize);
 	mSawGeometryChange = true;
+}
+
+void CutyCapt::pdfPrintFinish(const QString& file, bool success) {
+	if (!success && !mSilent) {
+		std::cerr << "Failed to print page to PDF '" << file.toStdString() << "'" << std::endl;
+		//QApplication::exit(1);
+	}
+
+	QApplication::quit();
 }
 
 void CutyCapt::saveSnapshot() {
@@ -255,15 +269,14 @@ void CutyCapt::saveSnapshot() {
 			painter.begin(&svg);
 			mPage->render(&painter);
 			painter.end();
+			QApplication::exit();
 			break;
 		}
 		case PdfFormat:
 		case PsFormat: {
-			QPrinter printer;
-			printer.setPageSize(QPrinter::A4);
-			printer.setOutputFileName(mOutput);
 			// TODO: change quality here?
-			mPage->page()->print(&printer, [](bool) {});
+			mTimeoutTimer.stop();
+			mPage->page()->printToPdf(mOutput);
 			break;
 		}
 		case InnerTextFormat:
@@ -273,6 +286,7 @@ void CutyCapt::saveSnapshot() {
 				QTextStream s(&file);
 				s.setCodec("utf-8");
 				s << result;
+				QApplication::exit();
 			});
 			break;
 		case HtmlFormat: {
@@ -282,6 +296,7 @@ void CutyCapt::saveSnapshot() {
 				QTextStream s(&file);
 				s.setCodec("utf-8");
 				s << result;
+				QApplication::exit();
 			});
 			break;
 		}
@@ -299,6 +314,7 @@ void CutyCapt::saveSnapshot() {
 			painter.end();
 			// TODO: add quality
 			image.save(mOutput, format);
+			QApplication::exit();
 		}
 	};
 }
@@ -621,9 +637,16 @@ int main(int argc, char* argv[]) {
 	app.connect(page.page(), SIGNAL(contentsSizeChanged(const QSizeF&)), &main,
 	            SLOT(onSizeChanged(const QSizeF&)));
 
+	app.connect(page.page(), &QWebEnginePage::pdfPrintingFinished, &main, &CutyCapt::pdfPrintFinish);
+
 	if (argMaxWait > 0) {
 		// TODO: Should this also register one for the application?
-		QTimer::singleShot(argMaxWait, &main, SLOT(Timeout()));
+		QTimer& timer = main.mTimeoutTimer;
+
+		timer.setInterval(argMaxWait);
+		timer.setSingleShot(true);
+		app.connect(&timer, &QTimer::timeout, &main, &CutyCapt::Timeout);
+		timer.start();
 	}
 
 	/*

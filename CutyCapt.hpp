@@ -63,9 +63,12 @@ private slots:
 	void DocumentComplete(bool ok);
 	void InitialLayoutCompleted();
 	void JavaScriptWindowObjectCleared();
-	void Timeout();
 	void Delayed();
 	void onSizeChanged(const QSizeF& size);
+
+public slots:
+	void Timeout();
+	void pdfPrintFinish(const QString&, bool success);
 
 private:
 	void TryDelayedRender();
@@ -86,4 +89,7 @@ protected:
 	bool mInsecure;
 	bool mSmooth;
 	bool mSilent;
+
+public:
+	QTimer mTimeoutTimer;
 };
