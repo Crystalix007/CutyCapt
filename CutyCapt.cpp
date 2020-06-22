@@ -223,7 +223,7 @@ void CutyCapt::Delayed() {
 void CutyCapt::onSizeChanged(const QSizeF& size) {
 	if (!mSilent)
 		std::clog << "Geometry of viewport change (" << size.width() << ", " << size.height() << ")"
-	          << std::endl;
+		          << std::endl;
 
 	mViewSize = size.toSize();
 	mPage->setMinimumSize(mViewSize);
@@ -233,7 +233,7 @@ void CutyCapt::onSizeChanged(const QSizeF& size) {
 void CutyCapt::pdfPrintFinish(const QString& file, bool success) {
 	if (!success && !mSilent) {
 		std::cerr << "Failed to print page to PDF '" << file.toStdString() << "'" << std::endl;
-		//QApplication::exit(1);
+		QApplication::exit(1);
 	}
 
 	QApplication::quit();
@@ -269,7 +269,7 @@ void CutyCapt::saveSnapshot() {
 			painter.begin(&svg);
 			mPage->render(&painter);
 			painter.end();
-			QApplication::exit();
+			QApplication::quit();
 			break;
 		}
 		case PdfFormat:
@@ -286,7 +286,7 @@ void CutyCapt::saveSnapshot() {
 				QTextStream s(&file);
 				s.setCodec("utf-8");
 				s << result;
-				QApplication::exit();
+				QApplication::quit();
 			});
 			break;
 		case HtmlFormat: {
@@ -296,7 +296,7 @@ void CutyCapt::saveSnapshot() {
 				QTextStream s(&file);
 				s.setCodec("utf-8");
 				s << result;
-				QApplication::exit();
+				QApplication::quit();
 			});
 			break;
 		}
@@ -314,7 +314,7 @@ void CutyCapt::saveSnapshot() {
 			painter.end();
 			// TODO: add quality
 			image.save(mOutput, format);
-			QApplication::exit();
+			QApplication::quit();
 		}
 	};
 }
@@ -358,10 +358,10 @@ void CaptHelp(void) {
 	       "  --js-can-access-clipboard=<on|off> Script clipboard privs (default: unknown)     \n"
 	       "  --print-backgrounds=<on|off>       Backgrounds in PDF/PS output (default: off)   \n"
 	       "  --zoom-factor=<float>              Page zoom factor (default: no zooming)        \n"
-	// "  --zoom-text-only=<on|off>       Whether to zoom only the text (default: off)
-	// (deprecated for WebEngine) \n"
-	// "  --http-proxy=<url>              Address for HTTP proxy server (default: none)
-	// (disabled until corresponding WebEngine setting found)  \n"
+	       // "  --zoom-text-only=<on|off>       Whether to zoom only the text (default: off)
+	       // (deprecated for WebEngine) \n"
+	       // "  --http-proxy=<url>              Address for HTTP proxy server (default: none)
+	       // (disabled until corresponding WebEngine setting found)  \n"
 #if CUTYCAPT_SCRIPT
 	       "  --inject-script=<path>             JavaScript that will be injected into pages   \n"
 	       "  --script-object=<string>           Property to hold state for injected script    \n"
