@@ -1,15 +1,16 @@
-#include <QtWebKit>
+#include <QtWebEngine>
 
 #if QT_VERSION >= 0x050000
-#	include <QtWebKitWidgets>
+#	include <QtWebEngineWidgets>
 #endif
 
 class CutyCapt;
-class CutyPage : public QWebPage {
+class CutyPage : public QWebEngineView {
 	Q_OBJECT
 
 public:
-	void setAttribute(QWebSettings::WebAttribute option, const QString& value);
+	void setAttribute(QWebEngineSettings::WebAttribute option, const QString& value);
+	void setAttribute(Qt::WidgetAttribute option, const bool value);
 	void setUserAgent(const QString& userAgent);
 	void setAlertString(const QString& alertString);
 	void setPrintAlerts(bool printAlerts);
@@ -17,13 +18,14 @@ public:
 	QString getAlertString();
 
 protected:
-	QString chooseFile(QWebFrame* frame, const QString& suggestedFile);
+	QString chooseFile(QWebEnginePage* frame, const QString& suggestedFile);
 	void javaScriptConsoleMessage(const QString& message, int lineNumber, const QString& sourceID);
-	bool javaScriptPrompt(QWebFrame* frame, const QString& msg, const QString& defaultValue,
+	bool javaScriptPrompt(QWebEnginePage* frame, const QString& msg, const QString& defaultValue,
 	                      QString* result);
-	void javaScriptAlert(QWebFrame* frame, const QString& msg);
-	bool javaScriptConfirm(QWebFrame* frame, const QString& msg);
-	QString userAgentForUrl(const QUrl& url) const;
+	void javaScriptAlert(QWebEnginePage* frame, const QString& msg);
+	bool javaScriptConfirm(QWebEnginePage* frame, const QString& msg);
+	QString userAgentForUrl(/* const QUrl& url */) const;
+
 	QString mUserAgent;
 	QString mAlertString;
 	bool mPrintAlerts;
@@ -41,7 +43,6 @@ public:
 		PsFormat,
 		InnerTextFormat,
 		HtmlFormat,
-		RenderTreeFormat,
 		PngFormat,
 		JpegFormat,
 		MngFormat,
@@ -55,7 +56,8 @@ public:
 	};
 
 	CutyCapt(CutyPage* page, const QString& output, int delay, OutputFormat format,
-	         const QString& scriptProp, const QString& scriptCode, bool insecure, bool smooth);
+	         const QString& scriptProp, const QString& scriptCode, bool insecure, bool smooth,
+	         bool silent);
 
 private slots:
 	void DocumentComplete(bool ok);
@@ -63,13 +65,15 @@ private slots:
 	void JavaScriptWindowObjectCleared();
 	void Timeout();
 	void Delayed();
-	void handleSslErrors(QNetworkReply* reply, QList<QSslError> errors);
+	void onSizeChanged(const QSizeF& size);
 
 private:
 	void TryDelayedRender();
 	void saveSnapshot();
 	bool mSawInitialLayout;
 	bool mSawDocumentComplete;
+	bool mSawGeometryChange;
+	QSize mViewSize;
 
 protected:
 	QString mOutput;
@@ -81,4 +85,5 @@ protected:
 	QString mScriptCode;
 	bool mInsecure;
 	bool mSmooth;
+	bool mSilent;
 };

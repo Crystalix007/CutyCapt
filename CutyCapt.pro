@@ -1,10 +1,10 @@
-QT       +=  webkit svg network
+QT       +=  webengine svg network
 SOURCES   =  CutyCapt.cpp
 HEADERS   =  CutyCapt.hpp
 CONFIG   +=  qt console
 
 greaterThan(QT_MAJOR_VERSION, 4): {
-  QT       +=  webkitwidgets
+  QT       +=  webenginewidgets printsupport
 }
 
 contains(CONFIG, static): {

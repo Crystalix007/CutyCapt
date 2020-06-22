@@ -26,19 +26,21 @@
 #include <QApplication>
 #include <QSvgGenerator>
 #include <QtGui>
-#include <QtWebKit>
+#include <QtWebEngine>
 
-#if QT_VERSION < 0x050000
-#	include <QPrinter>
-#endif
+#include <QPrinter>
 
 #include "CutyCapt.hpp"
 #include <QByteArray>
 #include <QNetworkProxy>
 #include <QNetworkRequest>
 #include <QTimer>
+#include <cstdlib>
+#include <iostream>
+#include <qsgrendererinterface.h>
+#include <qwebenginesettings.h>
 
-#if QT_VERSION >= 0x040600 && 0
+#if 0
 #	define CUTYCAPT_SCRIPT 1
 #endif
 
@@ -55,34 +57,26 @@ static struct _CutyExtMap {
 	CutyCapt::OutputFormat id;
 	const char* extension;
 	const char* identifier;
-} const CutyExtMap[] = { { CutyCapt::SvgFormat, ".svg", "svg" },
-	                       { CutyCapt::PdfFormat, ".pdf", "pdf" },
-	                       { CutyCapt::PsFormat, ".ps", "ps" },
-	                       { CutyCapt::InnerTextFormat, ".txt", "itext" },
-	                       { CutyCapt::HtmlFormat, ".html", "html" },
-#if QT_VERSION < 0x050000
-	                       { CutyCapt::RenderTreeFormat, ".rtree", "rtree" },
-#endif
-	                       { CutyCapt::JpegFormat, ".jpeg", "jpeg" },
-	                       { CutyCapt::PngFormat, ".png", "png" },
-	                       { CutyCapt::MngFormat, ".mng", "mng" },
-	                       { CutyCapt::TiffFormat, ".tiff", "tiff" },
-	                       { CutyCapt::GifFormat, ".gif", "gif" },
-	                       { CutyCapt::BmpFormat, ".bmp", "bmp" },
-	                       { CutyCapt::PpmFormat, ".ppm", "ppm" },
-	                       { CutyCapt::XbmFormat, ".xbm", "xbm" },
-	                       { CutyCapt::XpmFormat, ".xpm", "xpm" },
-	                       { CutyCapt::OtherFormat, "", "" } };
+} const CutyExtMap[] = {
+	{ CutyCapt::SvgFormat, ".svg", "svg" },    { CutyCapt::PdfFormat, ".pdf", "pdf" },
+	{ CutyCapt::PsFormat, ".ps", "ps" },       { CutyCapt::InnerTextFormat, ".txt", "itext" },
+	{ CutyCapt::HtmlFormat, ".html", "html" }, { CutyCapt::JpegFormat, ".jpeg", "jpeg" },
+	{ CutyCapt::PngFormat, ".png", "png" },    { CutyCapt::MngFormat, ".mng", "mng" },
+	{ CutyCapt::TiffFormat, ".tiff", "tiff" }, { CutyCapt::GifFormat, ".gif", "gif" },
+	{ CutyCapt::BmpFormat, ".bmp", "bmp" },    { CutyCapt::PpmFormat, ".ppm", "ppm" },
+	{ CutyCapt::XbmFormat, ".xbm", "xbm" },    { CutyCapt::XpmFormat, ".xpm", "xpm" },
+	{ CutyCapt::OtherFormat, "", "" }
+};
 
-QString CutyPage::chooseFile(QWebFrame* /*frame*/, const QString& /*suggestedFile*/) {
-	return QString::null;
+QString CutyPage::chooseFile(QWebEnginePage* /*frame*/, const QString& /*suggestedFile*/) {
+	return QString{};
 }
 
-bool CutyPage::javaScriptConfirm(QWebFrame* /*frame*/, const QString& /*msg*/) {
+bool CutyPage::javaScriptConfirm(QWebEnginePage* /*frame*/, const QString& /*msg*/) {
 	return true;
 }
 
-bool CutyPage::javaScriptPrompt(QWebFrame* /*frame*/, const QString& /*msg*/,
+bool CutyPage::javaScriptPrompt(QWebEnginePage* /*frame*/, const QString& /*msg*/,
                                 const QString& /*defaultValue*/, QString* /*result*/) {
 	return true;
 }
@@ -92,8 +86,7 @@ void CutyPage::javaScriptConsoleMessage(const QString& /*message*/, int /*lineNu
 	// noop
 }
 
-void CutyPage::javaScriptAlert(QWebFrame* /*frame*/, const QString& msg) {
-
+void CutyPage::javaScriptAlert(QWebEnginePage* /*frame*/, const QString& msg) {
 	if (mPrintAlerts)
 		qDebug() << "[alert]" << msg;
 
@@ -102,12 +95,11 @@ void CutyPage::javaScriptAlert(QWebFrame* /*frame*/, const QString& msg) {
 	}
 }
 
-QString CutyPage::userAgentForUrl(const QUrl& url) const {
-
+QString CutyPage::userAgentForUrl(/* const QUrl& url */) const {
 	if (!mUserAgent.isNull())
 		return mUserAgent;
 
-	return QWebPage::userAgentForUrl(url);
+	return page()->profile()->httpUserAgent();
 }
 
 void CutyPage::setUserAgent(const QString& userAgent) {
@@ -130,8 +122,7 @@ void CutyPage::setPrintAlerts(bool printAlerts) {
 	mPrintAlerts = printAlerts;
 }
 
-void CutyPage::setAttribute(QWebSettings::WebAttribute option, const QString& value) {
-
+void CutyPage::setAttribute(QWebEngineSettings::WebAttribute option, const QString& value) {
 	if (value == "on")
 		settings()->setAttribute(option, true);
 	else if (value == "off")
@@ -140,18 +131,24 @@ void CutyPage::setAttribute(QWebSettings::WebAttribute option, const QString& va
 		(void)0; // TODO: ...
 }
 
+void CutyPage::setAttribute(Qt::WidgetAttribute option, const bool value) {
+	QWidget::setAttribute(option, value);
+}
+
 // TODO: Consider merging some of main() and CutyCap
 
 CutyCapt::CutyCapt(CutyPage* page, const QString& output, int delay, OutputFormat format,
-                   const QString& scriptProp, const QString& scriptCode, bool insecure,
-                   bool smooth) {
+                   const QString& scriptProp, const QString& scriptCode, bool insecure, bool smooth,
+                   bool silent) {
 	mPage = page;
 	mOutput = output;
 	mDelay = delay;
 	mInsecure = insecure;
 	mSmooth = smooth;
+	mSilent = silent;
 	mSawInitialLayout = false;
 	mSawDocumentComplete = false;
+	mSawGeometryChange = false;
 	mFormat = format;
 	mScriptProp = scriptProp;
 	mScriptCode = scriptCode;
@@ -163,36 +160,40 @@ CutyCapt::CutyCapt(CutyPage* page, const QString& output, int delay, OutputForma
 }
 
 void CutyCapt::InitialLayoutCompleted() {
+	if (!mSilent)
+		std::cerr << "WebEngine completed initial layout" << std::endl;
+
 	mSawInitialLayout = true;
 
-	if (mSawInitialLayout && mSawDocumentComplete)
+	if (mSawInitialLayout && mSawDocumentComplete && mSawGeometryChange)
 		TryDelayedRender();
 }
 
 void CutyCapt::DocumentComplete(bool /*ok*/) {
+	if (!mSilent)
+		std::cerr << "WebEngine completely downloaded document" << std::endl;
+
 	mSawDocumentComplete = true;
 
-	if (mSawInitialLayout && mSawDocumentComplete)
+	if (/*mSawInitialLayout && */ mSawDocumentComplete && mSawGeometryChange)
 		TryDelayedRender();
 }
 
 void CutyCapt::JavaScriptWindowObjectCleared() {
-
 	if (!mScriptProp.isEmpty()) {
-		QVariant var = mPage->mainFrame()->evaluateJavaScript(mScriptProp);
-		QObject* obj = var.value<QObject*>();
+		mPage->page()->runJavaScript(mScriptProp, [this](const QVariant& result) {
+			QObject* obj = result.value<QObject*>();
 
-		if (obj == mScriptObj)
-			return;
+			if (obj == mScriptObj)
+				return;
 
-		mPage->mainFrame()->addToJavaScriptWindowObject(mScriptProp, mScriptObj);
+			// mPage->addToJavaScriptWindowObject(mScriptProp, mScriptObj);
+			mPage->page()->runJavaScript(mScriptCode);
+		});
 	}
-
-	mPage->mainFrame()->evaluateJavaScript(mScriptCode);
 }
 
 void CutyCapt::TryDelayedRender() {
-
 	if (!mPage->getAlertString().isEmpty())
 		return;
 
@@ -215,16 +216,16 @@ void CutyCapt::Delayed() {
 	QApplication::exit();
 }
 
-void CutyCapt::handleSslErrors(QNetworkReply* reply, QList<QSslError> errors) {
-	if (mInsecure) {
-		reply->ignoreSslErrors();
-	} else {
-		// TODO: what to do here instead of hanging?
-	}
+void CutyCapt::onSizeChanged(const QSizeF& size) {
+	std::cerr << "Geometry of viewport change (" << size.width() << ", " << size.height() << ")"
+	          << std::endl;
+
+	mViewSize = size.toSize();
+	mPage->setMinimumSize(mViewSize);
+	mSawGeometryChange = true;
 }
 
 void CutyCapt::saveSnapshot() {
-	QWebFrame* mainFrame = mPage->mainFrame();
 	QPainter painter;
 	const char* format = NULL;
 
@@ -241,15 +242,18 @@ void CutyCapt::saveSnapshot() {
 	// check for other events... This is primarily a problem
 	// under my Ubuntu virtual machine.
 
-	mPage->setViewportSize(mainFrame->contentsSize());
+	// mPage->view()->setMinimumSize( mainFrame->contentsSize() );
+	// uses the viewSize set by geometryChangeRequestedSlot
+
+	QString mOutput{ this->mOutput };
 
 	switch (mFormat) {
 		case SvgFormat: {
 			QSvgGenerator svg;
 			svg.setFileName(mOutput);
-			svg.setSize(mPage->viewportSize());
+			svg.setSize(mViewSize);
 			painter.begin(&svg);
-			mainFrame->render(&painter);
+			mPage->render(&painter);
 			painter.end();
 			break;
 		}
@@ -259,41 +263,39 @@ void CutyCapt::saveSnapshot() {
 			printer.setPageSize(QPrinter::A4);
 			printer.setOutputFileName(mOutput);
 			// TODO: change quality here?
-			mainFrame->print(&printer);
+			mPage->page()->print(&printer, [](bool) {});
 			break;
 		}
-#if QT_VERSION < 0x050000
-		case RenderTreeFormat: {
-			QFile file(mOutput);
-			file.open(QIODevice::WriteOnly | QIODevice::Text);
-			QTextStream s(&file);
-			s.setCodec("utf-8");
-			s << mainFrame->renderTreeDump();
-			break;
-		}
-#endif
 		case InnerTextFormat:
+			mPage->page()->toPlainText([mOutput](const QString& result) {
+				QFile file(mOutput);
+				file.open(QIODevice::WriteOnly | QIODevice::Text);
+				QTextStream s(&file);
+				s.setCodec("utf-8");
+				s << result;
+			});
+			break;
 		case HtmlFormat: {
-			QFile file(mOutput);
-			file.open(QIODevice::WriteOnly | QIODevice::Text);
-			QTextStream s(&file);
-			s.setCodec("utf-8");
-			s << (mFormat == InnerTextFormat ? mainFrame->toPlainText()
-			                                 : mFormat == HtmlFormat ? mainFrame->toHtml() : "bug");
+			mPage->page()->toHtml([mOutput](const QString& result) {
+				QFile file(mOutput);
+				file.open(QIODevice::WriteOnly | QIODevice::Text);
+				QTextStream s(&file);
+				s.setCodec("utf-8");
+				s << result;
+			});
 			break;
 		}
 		default: {
-			QImage image(mPage->viewportSize(), QImage::Format_ARGB32);
+			// mPage->grab().save(mOutput, format);
+			QImage image(mViewSize, QImage::Format_ARGB32);
 			painter.begin(&image);
-#if QT_VERSION >= 0x050000
 			if (mSmooth) {
 				painter.setRenderHint(QPainter::SmoothPixmapTransform);
 				painter.setRenderHint(QPainter::Antialiasing);
 				painter.setRenderHint(QPainter::TextAntialiasing);
 				painter.setRenderHint(QPainter::HighQualityAntialiasing);
 			}
-#endif
-			mainFrame->render(&painter);
+			mPage->render(&painter);
 			painter.end();
 			// TODO: add quality
 			image.save(mOutput, format);
@@ -302,99 +304,109 @@ void CutyCapt::saveSnapshot() {
 }
 
 void CaptHelp(void) {
-	printf("%s", " -----------------------------------------------------------------------------\n"
-	             " Usage: CutyCapt --url=http://www.example.org/ --out=localfile.png            \n"
-	             " -----------------------------------------------------------------------------\n"
-	             "  --help                         Print this help page and exit                \n"
-	             "  --url=<url>                    The URL to capture (http:...|file:...|...)   \n"
-	             "  --out=<path>                   The target file (.png|pdf|ps|svg|jpeg|...)   \n"
-	             "  --out-format=<f>               Like extension in --out, overrides heuristic \n"
-	             //  "  --out-quality=<int>            Output format quality from 1 to 100 \n"
-	             "  --min-width=<int>              Minimal width for the image (default: 800)   \n"
-	             "  --min-height=<int>             Minimal height for the image (default: 600)  \n"
-	             "  --max-wait=<ms>                Don't wait more than (default: 90000, inf: 0)\n"
-	             "  --delay=<ms>                   After successful load, wait (default: 0)     \n"
-	             //  "  --user-styles=<url>            Location of user style sheet (deprecated) \n"
-	             "  --user-style-path=<path>       Location of user style sheet file, if any    \n"
-	             "  --user-style-string=<css>      User style rules specified as text           \n"
-	             "  --header=<name>:<value>        request header; repeatable; some can't be set\n"
-	             "  --method=<get|post|put>        Specifies the request method (default: get)  \n"
-	             "  --body-string=<string>         Unencoded request body (default: none)       \n"
-	             "  --body-base64=<base64>         Base64-encoded request body (default: none)  \n"
-	             "  --app-name=<name>              appName used in User-Agent; default is none  \n"
-	             "  --app-version=<version>        appVers used in User-Agent; default is none  \n"
-	             "  --user-agent=<string>          Override the User-Agent header Qt would set  \n"
-	             "  --javascript=<on|off>          JavaScript execution (default: on)           \n"
-	             "  --java=<on|off>                Java execution (default: unknown)            \n"
-	             "  --plugins=<on|off>             Plugin execution (default: unknown)          \n"
-	             "  --private-browsing=<on|off>    Private browsing (default: unknown)          \n"
-	             "  --auto-load-images=<on|off>    Automatic image loading (default: on)        \n"
-	             "  --js-can-open-windows=<on|off> Script can open windows? (default: unknown)  \n"
-	             "  --js-can-access-clipboard=<on|off> Script clipboard privs (default: unknown)\n"
-#if QT_VERSION >= 0x040500
-	             "  --print-backgrounds=<on|off>   Backgrounds in PDF/PS output (default: off)  \n"
-	             "  --zoom-factor=<float>          Page zoom factor (default: no zooming)       \n"
-	             "  --zoom-text-only=<on|off>      Whether to zoom only the text (default: off) \n"
-	             "  --http-proxy=<url>             Address for HTTP proxy server (default: none)\n"
-#endif
+	printf("%s",
+	       " ----------------------------------------------------------------------------------\n"
+	       " Usage: CutyCapt --url=http://www.example.org/ --out=localfile.png                 \n"
+	       " ----------------------------------------------------------------------------------\n"
+	       "  --help                             Print this help page and exit                 \n"
+	       "  --url=<url>                        The URL to capture (http:...|file:...|...)    \n"
+	       "  --out=<path>                       The target file (.png|pdf|ps|svg|jpeg|...)    \n"
+	       "  --out-format=<f>                   Like extension in --out, overrides heuristic  \n"
+	       // "  --out-quality=<int>             Output format quality from 1 to 100           \n"
+	       "  --min-width=<int>                  Minimal width for the image (default: 800)    \n"
+	       "  --min-height=<int>                 Minimal height for the image (default: 600)   \n"
+	       "  --force-gpu-mem-available-mb=<int> Set the memory in Chromium for rendering      \n"
+	       "  --max-wait=<ms>                    Don't wait more than (default: 90000, inf: 0) \n"
+	       "  --delay=<ms>                       After successful load, wait (default: 0)      \n"
+	       // "  --user-styles=<url>             Location of user style sheet (deprecated)     \n"
+	       // "  --user-style-path=<path>        Location of user style sheet file, if any
+	       // (disabled until the insertion script is written) \n"
+	       // "  --user-style-string=<css>       User style rules specified as text (disabled
+	       // until the insertion script is      written) \n"
+	       "  --header=<name>:<value>            request header; repeatable; some can't be set \n"
+	       // "  --method=<get|post|put>            Specifies the request method (default: get)
+	       // (disabled until a corresponding WebEngine setting is found) \n"
+	       "  --body-string=<string>             Unencoded request body (default: none)        \n"
+	       "  --body-base64=<base64>             Base64-encoded request body (default: none)   \n"
+	       "  --app-name=<name>                  appName used in User-Agent; default is none   \n"
+	       "  --app-version=<version>            appVers used in User-Agent; default is none   \n"
+	       "  --user-agent=<string>              Override the User-Agent header Qt would set   \n"
+	       "  --javascript=<on|off>              JavaScript execution (default: on)            \n"
+	       // "  --java=<on|off>                 Java execution (default: unknown) (deprecated for
+	       // WebEngine)  \n"
+	       "  --plugins=<on|off>                 Plugin execution (default: unknown)           \n"
+	       // "  --private-browsing=<on|off>    Private browsing (default: unknown) (disabled until
+	       // corresponding WebEngine setting found)  \n"
+	       "  --auto-load-images=<on|off>        Automatic image loading (default: on)         \n"
+	       "  --js-can-open-windows=<on|off>     Script can open windows? (default: unknown)   \n"
+	       "  --js-can-access-clipboard=<on|off> Script clipboard privs (default: unknown)     \n"
+	       "  --print-backgrounds=<on|off>       Backgrounds in PDF/PS output (default: off)   \n"
+	       "  --zoom-factor=<float>              Page zoom factor (default: no zooming)        \n"
+	// "  --zoom-text-only=<on|off>       Whether to zoom only the text (default: off)
+	// (deprecated for WebEngine) \n"
+	// "  --http-proxy=<url>              Address for HTTP proxy server (default: none)
+	// (disabled until corresponding WebEngine setting found)  \n"
 #if CUTYCAPT_SCRIPT
-	             "  --inject-script=<path>         JavaScript that will be injected into pages  \n"
-	             "  --script-object=<string>       Property to hold state for injected script   \n"
-	             "  --expect-alert=<string>        Try waiting for alert(string) before capture \n"
-	             "  --debug-print-alerts           Prints out alert(...) strings for debugging. \n"
+	       "  --inject-script=<path>             JavaScript that will be injected into pages   \n"
+	       "  --script-object=<string>           Property to hold state for injected script    \n"
+	       "  --expect-alert=<string>            Try waiting for alert(string) before capture  \n"
+	       "  --debug-print-alerts               Prints out alert(...) strings for debugging.  \n"
 #endif
-#if QT_VERSION >= 0x050000
-	             "  --smooth                       Attempt to enable Qt's high-quality settings.\n"
-#endif
-	             "  --insecure                     Ignore SSL/TLS certificate errors            \n"
-	             " -----------------------------------------------------------------------------\n"
-	             "  <f> is svg,ps,pdf,itext,html,rtree,png,jpeg,mng,tiff,gif,bmp,ppm,xbm,xpm    \n"
-	             " -----------------------------------------------------------------------------\n"
+	       "  --smooth                           Attempt to enable Qt's high-quality settings. \n"
+	       "  --insecure                         Ignore SSL/TLS certificate errors             \n"
+	       " ----------------------------------------------------------------------------------\n"
+	       "  <f> is svg,ps,pdf,itext,html,png,jpeg,mng,tiff,gif,bmp,ppm,xbm,xpm               \n"
+	       " ----------------------------------------------------------------------------------\n"
 #if CUTYCAPT_SCRIPT
-	             " The `inject-script` option can be used to inject script code into loaded web \n"
-	             " pages. The code is called whenever the `javaScriptWindowObjectCleared` signal\n"
-	             " is received. When `script-object` is set, an object under the specified name \n"
-	             " will be available to the script to maintain state across page loads. When the\n"
-	             " `expect-alert` option is specified, the shot will be taken when a script in- \n"
-	             " vokes alert(string) with the string if that happens before `max-wait`. These \n"
-	             " options effectively allow you to remote control the browser and the web page.\n"
-	             " This an experimental and easily abused and misused feature. Use with caution.\n"
-	             " -----------------------------------------------------------------------------\n"
+	       " The `inject-script` option can be used to inject script code into loaded web      \n"
+	       " pages. The code is called whenever the `javaScriptWindowObjectCleared` signal     \n"
+	       " is received. When `script-object` is set, an object under the specified name      \n"
+	       " will be available to the script to maintain state across page loads. When the     \n"
+	       " `expect-alert` option is specified, the shot will be taken when a script in-      \n"
+	       " vokes alert(string) with the string if that happens before `max-wait`. These      \n"
+	       " options effectively allow you to remote control the browser and the web page.     \n"
+	       " This an experimental and easily abused and misused feature. Use with caution.     \n"
+	       " ----------------------------------------------------------------------------------\n"
 #endif
-	             " http://cutycapt.sf.net - (c) 2003-2013 Bjoern Hoehrmann - bjoern@hoehrmann.de\n"
-	             "");
+	       " http://cutycapt.sf.net - (c) 2003-2013 Bjoern Hoehrmann - bjoern@hoehrmann.de     \n"
+	       "");
 }
 
 int main(int argc, char* argv[]) {
-
-	int argHelp = 0;
+	bool argHelp = false;
 	int argDelay = 0;
-	int argSilent = 0;
-	int argInsecure = 0;
-	int argMinWidth = 800;
-	int argMinHeight = 600;
-	int argMaxWait = 90000;
-	int argVerbosity = 0;
-	int argSmooth = 0;
+	bool argSilent = false;
+	bool argInsecure = false;
+	int32_t argMinWidth = 800;
+	int32_t argMinHeight = 600;
+	uint32_t argMaxWait = 90000;
+	uint8_t argVerbosity = 0;
+	bool argSmooth = false;
 
 	const char* argUrl = NULL;
-	const char* argUserStyle = NULL;
-	const char* argUserStylePath = NULL;
-	const char* argUserStyleString = NULL;
-	const char* argIconDbPath = NULL;
+	// const char* argUserStyle = NULL;
+	// const char* argUserStylePath = NULL;
+	// const char* argUserStyleString = NULL;
+	// const char* argIconDbPath = NULL;
 	const char* argInjectScript = NULL;
 	const char* argScriptObject = NULL;
 	QString argOut;
 
 	CutyCapt::OutputFormat format = CutyCapt::OtherFormat;
 
+	QApplication::setAttribute(Qt::AA_UseSoftwareOpenGL, true);
+	QQuickWindow::setSceneGraphBackend(QSGRendererInterface::Software);
+
+	QtWebEngine::initialize();
+
 	QApplication app(argc, argv, true);
+
 	CutyPage page;
 
-	QNetworkAccessManager::Operation method = QNetworkAccessManager::GetOperation;
+	// QNetworkAccessManager::Operation method = QNetworkAccessManager::GetOperation;
 	QByteArray body;
-	QNetworkRequest req;
-	QNetworkAccessManager manager;
+	QWebEngineHttpRequest req{};
+	// QNetworkAccessManager manager;
 
 	// Parse command line parameters
 	for (int ax = 1; ax < argc; ++ax) {
@@ -405,11 +417,11 @@ int main(int argc, char* argv[]) {
 
 		// boolean options
 		if (strcmp("--silent", s) == 0) {
-			argSilent = 1;
+			argSilent = true;
 			continue;
 
 		} else if (strcmp("--help", s) == 0) {
-			argHelp = 1;
+			argHelp = true;
 			break;
 
 		} else if (strcmp("--verbose", s) == 0) {
@@ -417,14 +429,11 @@ int main(int argc, char* argv[]) {
 			continue;
 
 		} else if (strcmp("--insecure", s) == 0) {
-			argInsecure = 1;
+			argInsecure = true;
 			continue;
-
-#if QT_VERSION >= 0x050000
 		} else if (strcmp("--smooth", s) == 0) {
 			argSmooth = 1;
 			continue;
-#endif
 
 #if CUTYCAPT_SCRIPT
 		} else if (strcmp("--debug-print-alerts", s) == 0) {
@@ -446,158 +455,138 @@ int main(int argc, char* argv[]) {
 		// --name=value options
 		if (strncmp("--url", s, nlen) == 0) {
 			argUrl = value;
-
 		} else if (strncmp("--min-width", s, nlen) == 0) {
 			// TODO: add error checking here?
-			argMinWidth = (unsigned int)atoi(value);
-
+			argMinWidth = strtol(value, nullptr, 0);
 		} else if (strncmp("--min-height", s, nlen) == 0) {
 			// TODO: add error checking here?
-			argMinHeight = (unsigned int)atoi(value);
-
+			argMinHeight = strtol(value, nullptr, 0);
+		} else if (strncmp("--force-gpu-mem-available-mb", s, nlen) == 0) {
+			// don't actually do anything, just avoid this argument being treated as an error
 		} else if (strncmp("--delay", s, nlen) == 0) {
 			// TODO: see above
-			argDelay = (unsigned int)atoi(value);
-
+			argDelay = strtol(value, nullptr, 0);
 		} else if (strncmp("--max-wait", s, nlen) == 0) {
 			// TODO: see above
-			argMaxWait = (unsigned int)atoi(value);
-
+			argMaxWait = strtol(value, nullptr, 0);
 		} else if (strncmp("--out", s, nlen) == 0) {
 			argOut = value;
 
-			if (format == CutyCapt::OtherFormat)
-				for (int ix = 0; CutyExtMap[ix].id != CutyCapt::OtherFormat; ++ix)
+			if (format == CutyCapt::OtherFormat) {
+				for (int ix = 0; CutyExtMap[ix].id != CutyCapt::OtherFormat; ++ix) {
 					if (argOut.endsWith(CutyExtMap[ix].extension))
 						format = CutyExtMap[ix].id; //, break;
-
-		} else if (strncmp("--user-styles", s, nlen) == 0) {
-			// This option is provided for backwards-compatibility only
-			argUserStyle = value;
-
-		} else if (strncmp("--user-style-path", s, nlen) == 0) {
-			argUserStylePath = value;
-
-		} else if (strncmp("--user-style-string", s, nlen) == 0) {
-			argUserStyleString = value;
-
-		} else if (strncmp("--icon-database-path", s, nlen) == 0) {
-			argIconDbPath = value;
-
-		} else if (strncmp("--auto-load-images", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::AutoLoadImages, value);
-
+				}
+			}
+		/* } else if (strncmp("--user-styles", s, nlen) == 0) {
+      // This option is provided for backwards-compatibility only
+      argUserStyle = value;
+    } else if (strncmp("--user-style-path", s, nlen) == 0) {
+      argUserStylePath = value;
+    } else if (strncmp("--user-style-string", s, nlen) == 0) {
+      argUserStyleString = value;
+    } else if (strncmp("--icon-database-path", s, nlen) == 0) {
+      argIconDbPath = value;
+		*/ } else if (strncmp("--auto-load-images", s, nlen) == 0) {
+			page.setAttribute(QWebEngineSettings::AutoLoadImages, value);
 		} else if (strncmp("--javascript", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::JavascriptEnabled, value);
-
-		} else if (strncmp("--java", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::JavaEnabled, value);
-
-		} else if (strncmp("--plugins", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::PluginsEnabled, value);
-
-		} else if (strncmp("--private-browsing", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::PrivateBrowsingEnabled, value);
-
-		} else if (strncmp("--js-can-open-windows", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::JavascriptCanOpenWindows, value);
-
+			page.setAttribute(QWebEngineSettings::JavascriptEnabled, value);
+		} /* else if (strncmp("--java", s, nlen) == 0) {
+		  page.setAttribute(QWebEngineSettings::JavaEnabled, value);
+		} */
+		else if (strncmp("--plugins", s, nlen) == 0) {
+			page.setAttribute(QWebEngineSettings::PluginsEnabled, value);
+		} /* else if (strncmp("--private-browsing", s, nlen) == 0) {
+		  page.setAttribute(QWebEngineSettings::PrivateBrowsingEnabled, value);
+		} */
+		else if (strncmp("--js-can-open-windows", s, nlen) == 0) {
+			page.setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, value);
 		} else if (strncmp("--js-can-access-clipboard", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::JavascriptCanAccessClipboard, value);
-
-		} else if (strncmp("--developer-extras", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::DeveloperExtrasEnabled, value);
-
-		} else if (strncmp("--links-included-in-focus-chain", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::LinksIncludedInFocusChain, value);
-
-#if QT_VERSION >= 0x040500
+			page.setAttribute(QWebEngineSettings::JavascriptCanAccessClipboard, value);
+		} /* else if (strncmp("--developer-extras", s, nlen) == 0) {
+		  page.setAttribute(QWebEngineSettings::DeveloperExtrasEnabled, value);
+		} */
+		else if (strncmp("--links-included-in-focus-chain", s, nlen) == 0) {
+			page.setAttribute(QWebEngineSettings::LinksIncludedInFocusChain, value);
 		} else if (strncmp("--print-backgrounds", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::PrintElementBackgrounds, value);
-
+			page.setAttribute(QWebEngineSettings::PrintElementBackgrounds, value);
 		} else if (strncmp("--zoom-factor", s, nlen) == 0) {
-			page.mainFrame()->setZoomFactor(QString(value).toFloat());
-
-		} else if (strncmp("--zoom-text-only", s, nlen) == 0) {
-			page.setAttribute(QWebSettings::ZoomTextOnly, value);
-
-		} else if (strncmp("--http-proxy", s, nlen) == 0) {
-			QUrl p = QUrl::fromEncoded(value);
-			QNetworkProxy proxy =
-			    QNetworkProxy(QNetworkProxy::HttpProxy, p.host(), p.port(80), p.userName(), p.password());
-			manager.setProxy(proxy);
-			page.setNetworkAccessManager(&manager);
-#endif
+			page.setZoomFactor(static_cast<qreal>(QString(value).toFloat()));
+			/* }  else if (strncmp("--zoom-text-only", s, nlen) == 0) {
+			  page.setAttribute(QWebEngineSettings::ZoomTextOnly, value);
+			*//* } else if (strncmp("--http-proxy", s, nlen) == 0) {
+      QUrl p = QUrl::fromEncoded(value);
+		  QNetworkProxy proxy =
+		      QNetworkProxy(QNetworkProxy::HttpProxy, p.host(), p.port(80), p.userName(), p.password());
+      manager.setProxy(proxy);
+      page.setNetworkAccessManager(&manager);
+		*/
 
 #if CUTYCAPT_SCRIPT
 		} else if (strncmp("--inject-script", s, nlen) == 0) {
 			argInjectScript = value;
-
 		} else if (strncmp("--script-object", s, nlen) == 0) {
 			argScriptObject = value;
-
 		} else if (strncmp("--expect-alert", s, nlen) == 0) {
 			page.setAlertString(value);
 #endif
 
 		} else if (strncmp("--app-name", s, nlen) == 0) {
 			app.setApplicationName(value);
-
 		} else if (strncmp("--app-version", s, nlen) == 0) {
 			app.setApplicationVersion(value);
-
 		} else if (strncmp("--body-base64", s, nlen) == 0) {
 			body = QByteArray::fromBase64(value);
-
 		} else if (strncmp("--body-string", s, nlen) == 0) {
 			body = QByteArray(value);
-
 		} else if (strncmp("--user-agent", s, nlen) == 0) {
 			page.setUserAgent(value);
-
 		} else if (strncmp("--out-format", s, nlen) == 0) {
-			for (int ix = 0; CutyExtMap[ix].id != CutyCapt::OtherFormat; ++ix)
+			for (int ix = 0; CutyExtMap[ix].id != CutyCapt::OtherFormat; ++ix) {
 				if (strcmp(value, CutyExtMap[ix].identifier) == 0)
 					format = CutyExtMap[ix].id; //, break;
+			}
 
 			if (format == CutyCapt::OtherFormat) {
 				// TODO: error
-				argHelp = 1;
+				argHelp = true;
 				break;
 			}
-
 		} else if (strncmp("--header", s, nlen) == 0) {
 			const char* hv = strchr(value, ':');
 
-			if (hv == NULL) {
+			if (!hv) {
 				// TODO: error
-				argHelp = 1;
+				argHelp = true;
 				break;
 			}
 
-			req.setRawHeader(QByteArray(value, hv - value), hv + 1);
-
-		} else if (strncmp("--method", s, nlen) == 0) {
-			if (strcmp("value", "get") == 0)
-				method = QNetworkAccessManager::GetOperation;
-			else if (strcmp("value", "put") == 0)
-				method = QNetworkAccessManager::PutOperation;
-			else if (strcmp("value", "post") == 0)
-				method = QNetworkAccessManager::PostOperation;
-			else if (strcmp("value", "head") == 0)
-				method = QNetworkAccessManager::HeadOperation;
-			else
-				(void)0; // TODO: ...
-
-		} else {
+			req.setHeader(QByteArray(value, hv - value), hv + 1);
+		} /* else if (strncmp("--method", s, nlen) == 0) {
+		  if (strcmp("value", "get") == 0)
+		    method = QNetworkAccessManager::GetOperation;
+		  else if (strcmp("value", "put") == 0)
+		    method = QNetworkAccessManager::PutOperation;
+		  else if (strcmp("value", "post") == 0)
+		    method = QNetworkAccessManager::PostOperation;
+		  else if (strcmp("value", "head") == 0)
+		    method = QNetworkAccessManager::HeadOperation;
+		  else
+		    (void)0; // TODO: ...
+		} */
+		else {
 			// TODO: error
-			argHelp = 1;
+			argHelp = true;
 		}
 	}
 
 	if (argUrl == NULL || argOut == NULL || argHelp) {
 		CaptHelp();
 		return EXIT_FAILURE;
+	}
+
+	if (!argSilent) {
+		std::clog << "pixmap maximum dimension: " << INT_MAX << "x" << INT_MAX << std::endl;
 	}
 
 	// This used to use QUrl(argUrl) but that escapes %hh sequences
@@ -618,60 +607,67 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	CutyCapt main(&page, argOut, argDelay, format, scriptProp, scriptCode, !!argInsecure,
-	              !!argSmooth);
+	CutyCapt main{ &page,      argOut,      argDelay,  format,   scriptProp,
+		             scriptCode, argInsecure, argSmooth, argSilent };
 
 	app.connect(&page, SIGNAL(loadFinished(bool)), &main, SLOT(DocumentComplete(bool)));
 
-	app.connect(page.mainFrame(), SIGNAL(initialLayoutCompleted()), &main,
-	            SLOT(InitialLayoutCompleted()));
+	// Qt WebEngine removes the ability to check whether a page has layout it's components
+	// This checking functionality needs to be rewritten in JavaScript, and potentially Qt websockets
+	// / channels
+
+	// app.connect(page, SIGNAL(initialLayoutCompleted()), &main, SLOT(InitialLayoutCompleted()));
+
+	app.connect(page.page(), SIGNAL(contentsSizeChanged(const QSizeF&)), &main,
+	            SLOT(onSizeChanged(const QSizeF&)));
 
 	if (argMaxWait > 0) {
 		// TODO: Should this also register one for the application?
 		QTimer::singleShot(argMaxWait, &main, SLOT(Timeout()));
 	}
 
+	/*
 	if (argUserStyle != NULL)
-		// TODO: does this need any syntax checking?
-		page.settings()->setUserStyleSheetUrl(QUrl::fromEncoded(argUserStyle));
+	  // TODO: does this need any syntax checking?
+	  page.settings()->setUserStyleSheetUrl(QUrl::fromEncoded(argUserStyle));
 
 	if (argUserStylePath != NULL) {
-		page.settings()->setUserStyleSheetUrl(QUrl::fromLocalFile(argUserStylePath));
+	  page.settings()->setUserStyleSheetUrl(QUrl::fromLocalFile(argUserStylePath));
 	}
 
 	if (argUserStyleString != NULL) {
-		QUrl data("data:text/css;charset=utf-8;base64," + QByteArray(argUserStyleString).toBase64());
-		page.settings()->setUserStyleSheetUrl(data);
+	  QUrl data("data:text/css;charset=utf-8;base64," + QByteArray(argUserStyleString).toBase64());
+	  page.settings()->setUserStyleSheetUrl(data);
 	}
 
 	if (argIconDbPath != NULL)
-		// TODO: does this need any syntax checking?
-		page.settings()->setIconDatabasePath(argUserStyle);
+	  // TODO: does this need any syntax checking?
+	  page.settings()->setIconDatabasePath(argUserStyle);
+	*/
 
-	// The documentation does not say, but it seems the mainFrame
-	// will never change, so we can set this here. Otherwise we'd
-	// have to set this in snapshot and trigger an update, which
-	// is not currently possible (Qt 4.4.0) as far as I can tell.
-	page.mainFrame()->setScrollBarPolicy(Qt::Horizontal, Qt::ScrollBarAlwaysOff);
-	page.mainFrame()->setScrollBarPolicy(Qt::Vertical, Qt::ScrollBarAlwaysOff);
-	page.setViewportSize(QSize(argMinWidth, argMinHeight));
+	page.setAttribute(QWebEngineSettings::WebAttribute::ShowScrollBars, "off");
+	page.setAttribute(Qt::WA_DontShowOnScreen, true);
 
 #if CUTYCAPT_SCRIPT
 	// javaScriptWindowObjectCleared does not get called on the
 	// initial load unless some JavaScript has been executed.
-	page.mainFrame()->evaluateJavaScript(QString(""));
+	page->runJavaScript(QString(""));
 
-	app.connect(page.mainFrame(), SIGNAL(javaScriptWindowObjectCleared()), &main,
+	app.connect(page, SIGNAL(javaScriptWindowObjectCleared()), &main,
 	            SLOT(JavaScriptWindowObjectCleared()));
 #endif
 
-	app.connect(page.networkAccessManager(), SIGNAL(sslErrors(QNetworkReply*, QList<QSslError>)),
-	            &main, SLOT(handleSslErrors(QNetworkReply*, QList<QSslError>)));
-
 	if (!body.isNull())
-		page.mainFrame()->load(req, method, body);
-	else
-		page.mainFrame()->load(req, method);
+		req.setPostData(body);
+
+	page.load(req);
+
+	QSize argSize(argMinWidth, argMinHeight);
+
+	page.setMinimumSize(argSize);
+	page.setMaximumSize(QSize{ QWIDGETSIZE_MAX, QWIDGETSIZE_MAX });
+	page.resize(argSize);
+	page.show();
 
 	return app.exec();
 }
