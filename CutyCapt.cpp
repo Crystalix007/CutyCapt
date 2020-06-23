@@ -103,6 +103,7 @@ QString CutyPage::userAgentForUrl(/* const QUrl& url */) const {
 }
 
 void CutyPage::setUserAgent(const QString& userAgent) {
+	this->page()->profile()->setHttpUserAgent(userAgent);
 	mUserAgent = userAgent;
 }
 
