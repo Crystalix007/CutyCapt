@@ -180,7 +180,7 @@ void CutyCapt::DocumentComplete(bool ok) {
 
 	mSawDocumentComplete = true;
 
-	if (/*mSawInitialLayout && */ mSawDocumentComplete && mSawGeometryChange)
+	if (/* mSawInitialLayout && */ mSawDocumentComplete && mSawGeometryChange)
 		TryDelayedRender();
 }
 
@@ -229,6 +229,9 @@ void CutyCapt::onSizeChanged(const QSizeF& size) {
 	mViewSize = size.toSize();
 	mPage->setMinimumSize(mViewSize);
 	mSawGeometryChange = true;
+
+	if (/* mSawInitialLayout && */ mSawDocumentComplete && mSawGeometryChange)
+		TryDelayedRender();
 }
 
 void CutyCapt::pdfPrintFinish(const QString& file, bool success) {
